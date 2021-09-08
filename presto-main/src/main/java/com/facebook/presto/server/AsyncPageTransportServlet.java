@@ -37,7 +37,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -93,17 +92,41 @@ public class AsyncPageTransportServlet
             throws IOException
     {
         String requestURI = request.getRequestURI();
+
+        // Split a task URI without allocating a list and unnecessary strings
         // Example:  /v1/task/async/{taskId}/results/{bufferId}/{token}
-        List<String> requestURIParts = Arrays.asList(requestURI.split("/"));
+        TaskId taskId = null;
+        OutputBufferId bufferId = null;
+        long token = 0;
 
-        if (requestURIParts.size() != 8) {
-            response.sendError(SC_BAD_REQUEST, format("Unexpected URI for task result request in async mode: %s", requestURI));
-            return;
+        int previousIndex = -1;
+        for (int part = 0; part < 8; part++) {
+            int nextIndex = requestURI.indexOf('/', previousIndex + 1);
+
+            if (nextIndex == -1 && part != 7 || nextIndex != -1 && part == 7) {
+                response.sendError(SC_BAD_REQUEST, format("Unexpected URI for task result request in async mode: %s", requestURI));
+                return;
+            }
+
+            switch (part) {
+                case 4:
+                    taskId = TaskId.valueOf(requestURI.substring(previousIndex + 1, nextIndex));
+                    break;
+                case 6:
+                    bufferId = OutputBufferId.fromString(requestURI.substring(previousIndex + 1, nextIndex));
+                    break;
+                case 7:
+                    token = parseLong(requestURI.substring(previousIndex + 1));
+                    break;
+            }
+
+            previousIndex = nextIndex;
         }
+        // Allow these to be captured
+        final TaskId finalTaskId = taskId;
+        final OutputBufferId finalBufferId = bufferId;
+        final long finalToken = token;
 
-        TaskId taskId = TaskId.valueOf(requestURIParts.get(4));
-        OutputBufferId bufferId = OutputBufferId.fromString(requestURIParts.get(6));
-        long token = parseLong(requestURIParts.get(7));
         DataSize maxSize = DataSize.valueOf(request.getHeader(PRESTO_MAX_SIZE));
 
         AsyncContext asyncContext = request.startAsync(request, response);
@@ -139,10 +162,10 @@ public class AsyncPageTransportServlet
             }
         });
 
-        ListenableFuture<BufferResult> bufferResultFuture = taskManager.getTaskResults(taskId, bufferId, token, maxSize);
+        ListenableFuture<BufferResult> bufferResultFuture = taskManager.getTaskResults(finalTaskId, finalBufferId, finalToken, maxSize);
         bufferResultFuture = addTimeout(
                 bufferResultFuture,
-                () -> BufferResult.emptyResults(taskManager.getTaskInstanceId(taskId), token, false),
+                () -> BufferResult.emptyResults(taskManager.getTaskInstanceId(finalTaskId), finalToken, false),
                 waitTime,
                 timeoutExecutor);
 
