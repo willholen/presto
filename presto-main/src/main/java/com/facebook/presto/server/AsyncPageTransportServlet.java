@@ -93,17 +93,41 @@ public class AsyncPageTransportServlet
             throws IOException
     {
         String requestURI = request.getRequestURI();
-        // Example:  /v1/task/async/{taskId}/results/{bufferId}/{token}
-        List<String> requestURIParts = Arrays.asList(requestURI.split("/"));
 
-        if (requestURIParts.size() != 8) {
+        // Split a task URI without allocating a list and unnecessary strings
+        // Example:  /v1/task/async/{taskId}/results/{bufferId}/{token}
+        TaskId tmpTaskId = null;
+        OutputBufferId tmpBufferId = null;
+        long tmpToken = 0;
+
+        int previousIndex = -1;
+        for (int part = 0; part < 8; part++) {
+          int nextIndex = requestURI.indexOf('/', previousIndex+1);
+
+          if (nextIndex == -1 && part != 7 || nextIndex != -1 && part == 7) {
             response.sendError(SC_BAD_REQUEST, format("Unexpected URI for task result request in async mode: %s", requestURI));
             return;
-        }
+          }
 
-        TaskId taskId = TaskId.valueOf(requestURIParts.get(4));
-        OutputBufferId bufferId = OutputBufferId.fromString(requestURIParts.get(6));
-        long token = parseLong(requestURIParts.get(7));
+          switch (part) {
+            case 4:
+              tmpTaskId = TaskId.valueOf(requestURI.substring(previousIndex + 1, nextIndex));
+              break;
+            case 6:
+              tmpBufferId = OutputBufferId.fromString(requestURI.substring(previousIndex + 1, nextIndex));
+              break;
+            case 7:
+              tmpToken = parseLong(requestURI.substring(previousIndex + 1));
+              break;
+          }
+
+          previousIndex = nextIndex;
+        }
+        // Allow these to be captured
+        final TaskId taskId = tmpTaskId;
+        final OutputBufferId bufferId = tmpBufferId;
+        final long token = tmpToken;
+
         DataSize maxSize = DataSize.valueOf(request.getHeader(PRESTO_MAX_SIZE));
 
         AsyncContext asyncContext = request.startAsync(request, response);
