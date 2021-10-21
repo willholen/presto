@@ -87,6 +87,13 @@ public class AsyncPageTransportServlet
         this.timeoutExecutor = requireNonNull(timeoutExecutor, "timeoutExecutor is null");
     }
 
+    protected AsyncPageTransportServlet() {
+      this.taskManager = null;
+      this.pageTransportTimeout = null;
+      this.responseExecutor = null;
+      this.timeoutExecutor = null;
+    }
+
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws IOException
